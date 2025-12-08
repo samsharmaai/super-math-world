@@ -194,26 +194,68 @@
         let recentQuestions = []; // To prevent repetition
         let currentQ = {};
 
+
+
+
+        
         function initApp() {
             const saved = JSON.parse(localStorage.getItem('marioMathState'));
             if(saved) Object.assign(gameState, saved);
+            
+            // UI Updates
             checkStreak(); updateUI(); updateWorldTheme();
+            
+            // --- NEW CACHING LOGIC ---
+            const cachedData = localStorage.getItem('mathQuestionsCache');
+            const cacheTime = localStorage.getItem('mathCacheTime');
+            const now = new Date().getTime();
+            const CACHE_DURATION = 30 * 60 * 1000; // 30 Minutes
 
-            if(rawSheetURL.includes("PASTE_YOUR")) {
-                document.getElementById('qText').innerText = "Please update the Sheet URL!";
-                return;
+            // 1. If we have fresh data in memory, use it (INSTANT LOAD)
+            if (cachedData && cacheTime && (now - cacheTime < CACHE_DURATION)) {
+                console.log("Using cached questions");
+                allQuestions = JSON.parse(cachedData);
+                loadNextQuestion();
+            } 
+            // 2. Otherwise, download from Google Sheet
+            else {
+                console.log("Fetching new questions...");
+                document.getElementById('qText').innerText = "Loading Curriculum..."; // Show status
+                
+                if(rawSheetURL.includes("PASTE_YOUR")) {
+                    document.getElementById('qText').innerText = "Update Sheet URL!";
+                    return;
+                }
+
+                Papa.parse(sheetURL, {
+                    download: true, header: true, skipEmptyLines: true,
+                    complete: function(results) {
+                        allQuestions = results.data.filter(r => r.Question && r.Answer);
+                        
+                        if(allQuestions.length > 0) {
+                            // SAVE TO MEMORY
+                            localStorage.setItem('mathQuestionsCache', JSON.stringify(allQuestions));
+                            localStorage.setItem('mathCacheTime', now);
+                            loadNextQuestion();
+                        } else {
+                            document.getElementById('qText').innerText = "Sheet Empty?";
+                        }
+                    },
+                    error: (err) => { 
+                        // If internet fails, try to use old cache even if expired
+                        if(cachedData) {
+                            allQuestions = JSON.parse(cachedData);
+                            loadNextQuestion();
+                        } else {
+                            document.getElementById('qText').innerText = "Error Loading. Check Internet."; 
+                        }
+                    }
+                });
             }
-
-            Papa.parse(sheetURL, {
-                download: true, header: true, skipEmptyLines: true,
-                complete: function(results) {
-                    allQuestions = results.data.filter(r => r.Question && r.Answer);
-                    if(allQuestions.length > 0) loadNextQuestion();
-                    else document.getElementById('qText').innerText = "Sheet Empty?";
-                },
-                error: (err) => { document.getElementById('qText').innerText = "Error Loading. Check Sheet Permissions."; }
-            });
         }
+
+
+        
 
         function loadNextQuestion() {
             document.getElementById('feedback').innerText = "";
