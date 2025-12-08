@@ -309,17 +309,38 @@
             }
         }
 
+
         function doLevelClear() {
+            const bgm = document.getElementById('bgm');
             const overlay = document.getElementById('levelClearOverlay');
+            
+            // 1. Check if music was playing, then PAUSE it
+            const isMusicOn = !bgm.paused;
+            if (isMusicOn) bgm.pause();
+
+            // 2. Show Visuals
             overlay.style.display = 'flex';
             confetti({ particleCount: 200, spread: 90 });
-            const sfx = new Audio('clear.mp3'); sfx.play().catch(()=>{});
+
+            // 3. Play Clear Sound
+            const sfx = new Audio('clear.mp3'); 
+            sfx.play().catch(()=>{});
+
+            // 4. Wait 5 seconds, then reset
             setTimeout(() => {
                 overlay.style.display = 'none';
                 updateWorldTheme();
+                
+                // 5. Resume Music (only if it was on before)
+                if (isMusicOn) {
+                    bgm.currentTime = 0; // Restart music from beginning
+                    bgm.play();
+                }
             }, 5000);
         }
+        
 
+        
         function toggleMusic() {
             const bgm = document.getElementById('bgm');
             const btn = document.querySelector('.music-btn');
