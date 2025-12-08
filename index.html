@@ -197,7 +197,6 @@
 
 
 
-        
         function initApp() {
             const saved = JSON.parse(localStorage.getItem('marioMathState'));
             if(saved) Object.assign(gameState, saved);
@@ -209,7 +208,7 @@
             const cachedData = localStorage.getItem('mathQuestionsCache');
             const cacheTime = localStorage.getItem('mathCacheTime');
             const now = new Date().getTime();
-            const CACHE_DURATION = 30 * 60 * 1000; // 30 Minutes
+            const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 Hours
 
             // 1. If we have fresh data in memory, use it (INSTANT LOAD)
             if (cachedData && cacheTime && (now - cacheTime < CACHE_DURATION)) {
@@ -234,16 +233,22 @@
                         
                         if(allQuestions.length > 0) {
                             // SAVE TO MEMORY
-                            localStorage.setItem('mathQuestionsCache', JSON.stringify(allQuestions));
-                            localStorage.setItem('mathCacheTime', now);
+                            try {
+                                localStorage.setItem('mathQuestionsCache', JSON.stringify(allQuestions));
+                                localStorage.setItem('mathCacheTime', now);
+                            } catch (e) {
+                                console.warn("Cache failed (storage full?), using memory only");
+                            }
                             loadNextQuestion();
                         } else {
                             document.getElementById('qText').innerText = "Sheet Empty?";
                         }
                     },
                     error: (err) => { 
+                        console.error(err);
                         // If internet fails, try to use old cache even if expired
                         if(cachedData) {
+                            console.log("Network error, using expired cache");
                             allQuestions = JSON.parse(cachedData);
                             loadNextQuestion();
                         } else {
@@ -253,9 +258,6 @@
                 });
             }
         }
-
-
-        
 
         function loadNextQuestion() {
             document.getElementById('feedback').innerText = "";
