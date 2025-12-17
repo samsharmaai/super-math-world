@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Super Math World 3 - Logged In</title>
+    <title>Super Math World 3 - Debug Mode</title>
     <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Verdana&display=swap" rel="stylesheet"> 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
@@ -59,6 +59,11 @@
             box-shadow: 0 4px 0 #2e7d32;
         }
         .login-btn:active { transform: translateY(4px); box-shadow: none; }
+        
+        .guest-btn {
+            background: #999; color: white; border: none; padding: 10px; width: 100%;
+            font-family: 'Press Start 2P'; cursor: pointer; margin-top: 10px; font-size: 0.7em;
+        }
 
         /* --- HUD --- */
         .hud {
@@ -155,7 +160,10 @@
             <h2 style="color:black; margin-bottom: 20px;">PLAYER LOGIN</h2>
             <input type="email" id="email" class="login-input" placeholder="Email" value="mario@math.com">
             <input type="password" id="password" class="login-input" placeholder="Password">
-            <button class="login-btn" onclick="appLogin()">START GAME</button>
+            
+            <button id="loginBtn" class="login-btn" onclick="appLogin()">LOGIN & PLAY</button>
+            <button class="guest-btn" onclick="playAsGuest()">PLAY AS GUEST</button>
+
             <div id="login-status" style="color:blue; font-size:0.7em; margin-top:10px;"></div>
             <div id="login-error" style="color:red; font-size:0.7em; margin-top:10px;"></div>
         </div>
@@ -202,7 +210,6 @@
 
     <script>
         // --- 1. FIREBASE CONFIGURATION ---
-        // Your Keys are here:
         const firebaseConfig = {
             apiKey: "AIzaSyC3aHdoyrVWmOwnM5cEn3mueyEzG_QdBN0",
             authDomain: "super-math-tracker.firebaseapp.com",
@@ -219,25 +226,18 @@
             var db = firebase.firestore();
             var auth = firebase.auth();
             
-            // --- AUTO LOGIN CHECK ---
-            // This listens for previous logins
             auth.onAuthStateChanged((user) => {
                 if (user) {
-                    // User is signed in, skip login screen
                     document.getElementById('login-status').innerText = "Found saved login...";
                     currentUserEmail = user.email;
                     document.getElementById('login-overlay').style.display = 'none';
                     initApp();
-                } else {
-                    // User is signed out
-                    document.getElementById('login-status').innerText = "";
                 }
             });
 
         } catch(e) { console.log("Firebase not configured yet"); }
 
-        // --- SHEET CONFIG (With Cache Busting) ---
-        // We add ?t=DATE to force a fresh download every time
+        // --- SHEET CONFIG ---
         const rawSheetURL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vREhCuPrIB_HZ6Pa1IKHHrusqwgQddjZNGhnjr4W2TRG-jAuBgtakUZZdIQTHEQbjYniUaEpvVh1fXI/pub?output=csv";
         const sheetURL = "https://api.allorigins.win/raw?url=" + encodeURIComponent(rawSheetURL) + "&t=" + new Date().getTime();
 
@@ -258,27 +258,49 @@
         // --- APP LOGIC ---
         const gameState = { streak: 0, lastLogin: null, coins: 0, world: 1, stage: 1, score: 0, questionsAnsweredLevel: 0, correctInLevel: 0 };
         let allQuestions = []; let recentQuestions = []; let currentQ = {}; let currentUserEmail = "guest";
-        let appStarted = false; // Prevent double init
+        let appStarted = false;
 
         function appLogin() {
-            const email = document.getElementById('email').value;
-            const pass = document.getElementById('password').value;
-            
-            if(!firebase.apps.length) { alert("Please edit the HTML and paste your Firebase Config keys first!"); return; }
+            try {
+                const email = document.getElementById('email').value;
+                const pass = document.getElementById('password').value;
+                const btn = document.getElementById('loginBtn');
+                
+                // Visual Feedback
+                btn.innerText = "CONNECTING...";
+                document.getElementById('login-error').innerText = "";
 
-            auth.signInWithEmailAndPassword(email, pass)
-                .then((userCredential) => {
-                    currentUserEmail = userCredential.user.email;
-                    document.getElementById('login-overlay').style.display = 'none';
-                    // initApp will be called by onAuthStateChanged automatically
-                })
-                .catch((error) => {
-                    document.getElementById('login-error').innerText = "Error: " + error.message;
-                });
+                if(!firebase || !auth) { 
+                    alert("Firebase Error: The database script did not load. Check internet connection."); 
+                    btn.innerText = "LOGIN FAILED";
+                    return; 
+                }
+
+                auth.signInWithEmailAndPassword(email, pass)
+                    .then((userCredential) => {
+                        btn.innerText = "SUCCESS!";
+                        currentUserEmail = userCredential.user.email;
+                        document.getElementById('login-overlay').style.display = 'none';
+                        // initApp called by onAuthStateChanged
+                    })
+                    .catch((error) => {
+                        btn.innerText = "LOGIN & PLAY";
+                        document.getElementById('login-error').innerText = error.message;
+                        alert("Login Failed: " + error.message);
+                    });
+            } catch(e) {
+                alert("Critical Error: " + e.message);
+            }
+        }
+
+        function playAsGuest() {
+            currentUserEmail = "guest";
+            document.getElementById('login-overlay').style.display = 'none';
+            initApp();
         }
 
         function logAttempt(isCorrect, questionData) {
-            if(!db) return;
+            if(!db || currentUserEmail === "guest") return;
             db.collection("math_logs").add({
                 user: currentUserEmail,
                 timestamp: new Date(),
@@ -290,7 +312,7 @@
         }
 
         function initApp() {
-            if(appStarted) return; // Stop double loading
+            if(appStarted) return; 
             appStarted = true;
 
             const saved = JSON.parse(localStorage.getItem('marioMathState'));
@@ -299,4 +321,155 @@
             checkStreak(); updateUI(); updateWorldTheme();
 
             console.log("Fetching questions...");
-            document.getElementById('loading-container').style.display
+            document.getElementById('loading-container').style.display = 'flex';
+            setTimeout(() => { document.getElementById('force-start-btn').style.display = 'block'; }, 4000);
+
+            Papa.parse(sheetURL, {
+                download: true, header: true, skipEmptyLines: true,
+                complete: function(results) {
+                    const cleanData = results.data.filter(r => r.Question && r.Answer);
+                    if(cleanData.length > 0) {
+                        allQuestions = cleanData;
+                        document.getElementById('loading-container').style.display = 'none';
+                        loadNextQuestion();
+                    } else { 
+                        console.log("Empty sheet data received");
+                        forceOfflineMode(); 
+                    }
+                },
+                error: (err) => { 
+                    console.log("Sheet load error");
+                    forceOfflineMode(); 
+                }
+            });
+        }
+
+        function forceOfflineMode() {
+            document.getElementById('loading-container').style.display = 'none';
+            // Fallback questions if sheet fails
+            allQuestions = [
+                {Question: "10 + 10 = ?", Option1: "20", Option2: "30", Option3: "40", Answer: "20", Category: "Offline"},
+                {Question: "5 + 5 = ?", Option1: "10", Option2: "15", Option3: "25", Answer: "10", Category: "Offline"},
+                {Question: "Red Color?", Option1: "Blue", Option2: "Red", Option3: "Green", Answer: "Red", Category: "Offline"}
+            ];
+            loadNextQuestion();
+            alert("⚠️ Connection Issue: Loaded Offline Mode (Only 3 backup questions)");
+        }
+
+        function loadNextQuestion() {
+            document.getElementById('feedback').innerText = "";
+            let pool = allQuestions; 
+            const qIndex = Math.floor(Math.random() * pool.length);
+            currentQ = pool[qIndex];
+            
+            document.getElementById('qText').innerHTML = currentQ.Question;
+            const imgEl = document.getElementById('qImage');
+            if(currentQ.Image && currentQ.Image.trim().startsWith('http')) {
+                imgEl.src = currentQ.Image.trim(); imgEl.style.display = 'block';
+            } else { imgEl.style.display = 'none'; }
+
+            const answersDiv = document.getElementById('answers');
+            answersDiv.innerHTML = ""; 
+            const options = [currentQ.Option1, currentQ.Option2, currentQ.Option3].sort(() => Math.random() - 0.5);
+            options.forEach(opt => {
+                if(!opt) return; 
+                const btn = document.createElement('button');
+                btn.className = 'brick-btn';
+                btn.innerText = opt;
+                btn.onclick = () => handleAnswer(opt);
+                answersDiv.appendChild(btn);
+            });
+        }
+
+        function handleAnswer(selectedText) {
+            const feedback = document.getElementById('feedback');
+            const mario = document.getElementById('mario');
+            const isCorrect = (selectedText.trim() === currentQ.Answer.trim());
+
+            logAttempt(isCorrect, currentQ);
+
+            if(isCorrect) {
+                playCoinSound();
+                feedback.innerHTML = "CORRECT!"; feedback.className = "correct";
+                mario.classList.remove('hero-jump'); void mario.offsetWidth; mario.classList.add('hero-jump');
+                
+                gameState.score += 200; gameState.coins += 10;
+                gameState.questionsAnsweredLevel++; gameState.correctInLevel++;
+                
+                if(gameState.streak >= 5) document.getElementById('streakDisplay').classList.add('on-fire');
+
+                if(gameState.questionsAnsweredLevel >= 10) { showScorecard(); } 
+                else { saveGame(); setTimeout(loadNextQuestion, 1500); }
+            } else {
+                playBonkSound();
+                feedback.innerHTML = "TRY AGAIN"; feedback.className = "wrong";
+                gameState.streak = 0; 
+                document.getElementById('streakDisplay').classList.remove('on-fire');
+                gameState.questionsAnsweredLevel++;
+                
+                if(gameState.questionsAnsweredLevel >= 10) { showScorecard(); } 
+                else { saveGame(); }
+            }
+        }
+
+        function showScorecard() {
+            const bgm = document.getElementById('bgm');
+            const overlay = document.getElementById('scorecard-overlay');
+            if (!bgm.paused) bgm.pause();
+
+            let stars = 1;
+            if(gameState.correctInLevel >= 8) stars = 2;
+            if(gameState.correctInLevel >= 10) stars = 3;
+
+            document.getElementById('star1').className = 'star'; document.getElementById('star2').className = 'star'; document.getElementById('star3').className = 'star';
+            
+            let acc = Math.round((gameState.correctInLevel / 10) * 100);
+            document.getElementById('score-accuracy').innerText = acc + "%";
+            document.getElementById('score-coins').innerText = "+" + (gameState.correctInLevel * 10);
+
+            overlay.style.display = 'flex';
+            confetti({ particleCount: 200, spread: 90 });
+
+            if(stars >= 1) setTimeout(() => document.getElementById('star1').classList.add('pop'), 500);
+            if(stars >= 2) setTimeout(() => document.getElementById('star2').classList.add('pop'), 1000);
+            if(stars >= 3) setTimeout(() => document.getElementById('star3').classList.add('pop'), 1500);
+        }
+
+        function nextLevel() {
+            document.getElementById('scorecard-overlay').style.display = 'none';
+            gameState.questionsAnsweredLevel = 0; gameState.correctInLevel = 0; gameState.stage++;
+            if(gameState.stage > 3) { gameState.world++; gameState.stage = 1; updateWorldTheme(); }
+            saveGame(); loadNextQuestion();
+            const btnText = document.querySelector('.music-btn').innerText;
+            if (btnText.includes("ON")) { document.getElementById('bgm').play(); }
+        }
+
+        function toggleMusic() {
+            const bgm = document.getElementById('bgm');
+            const btn = document.querySelector('.music-btn');
+            if(bgm.paused) { bgm.play().catch(()=>{}); btn.innerText="MUSIC: ON"; }
+            else { bgm.pause(); btn.innerText="MUSIC: OFF"; }
+        }
+
+        function updateWorldTheme() {
+            if (gameState.world === 1) document.body.style.backgroundColor = "var(--sky-blue)";
+            else if (gameState.world === 2) document.body.style.backgroundColor = "var(--cave-black)";
+            else if (gameState.world >= 3) document.body.style.backgroundColor = "var(--brick-brown)";
+        }
+        function checkStreak() {
+            const today = new Date().toDateString();
+            const yesterday = new Date(Date.now() - 86400000).toDateString();
+            if (gameState.lastLogin === yesterday) { gameState.streak++; gameState.lastLogin = today; saveGame(); } 
+            else if (gameState.lastLogin !== today) { gameState.streak = 1; gameState.lastLogin = today; saveGame(); }
+            if(gameState.streak >= 5) document.getElementById('streakDisplay').classList.add('on-fire');
+        }
+        function saveGame() { localStorage.setItem('marioMathState', JSON.stringify(gameState)); updateUI(); }
+        function updateUI() {
+            document.getElementById('coinDisplay').innerText = gameState.coins.toString().padStart(2, '0');
+            document.getElementById('scoreDisplay').innerText = gameState.score.toString().padStart(6, '0');
+            document.getElementById('streakDisplay').innerText = gameState.streak.toString();
+            document.getElementById('levelDisplay').innerText = gameState.world + "-" + gameState.stage;
+        }
+    </script>
+</body>
+</html>
